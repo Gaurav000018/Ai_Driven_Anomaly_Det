@@ -212,3 +212,69 @@ def test_novelty_threshold_uses_known_defects_only():
     # Roughly 5% of known defects should fall outside their own threshold.
     flagged = det.is_novel(feats[feats["is_defect"].astype(bool)], exclude_self=True)
     assert flagged.mean() < 0.25
+
+
+# ------------------------------------------------------- robustness (Phase 6)
+
+
+def test_lot_too_small_is_refused_not_guessed(library):
+    """Borrowing another lot's reference population would be silently wrong."""
+    from src.api.service import MIN_LOT_FOR_SCORING
+
+    tiny = LotGenerator(library, seed=31).generate(n_lots=1, parts_per_lot=8, prevalence=0.0)
+    assert tiny["part_id"].nunique() < MIN_LOT_FOR_SCORING
+    issues = validate(tiny, min_lot_size=MIN_LOT_FOR_SCORING)
+    assert any(i.code == "small_lot" for i in issues)
+
+
+def test_mixed_units_are_an_error_not_a_warning(library, small_lots):
+    """A parameter carrying both uA and nA destroys every lot statistic."""
+    broken = small_lots.copy()
+    mask = (broken["param_name"] == "Iddq") & (broken["hours"] == 96.0)
+    broken.loc[mask, "unit"] = "nA"
+    issues = validate(broken)
+    assert any(i.code == "mixed_units" and i.level == "error" for i in issues)
+
+
+def test_duplicate_measurement_is_an_error(small_lots):
+    dup = pd.concat([small_lots, small_lots.head(5)], ignore_index=True)
+    issues = validate(dup)
+    assert any(i.code == "duplicate_measurement" and i.level == "error" for i in issues)
+
+
+def test_missing_timepoints_are_tolerated(library, small_lots):
+    """Ragged grids are a warning, not a failure - the kernel fits arbitrary t."""
+    from src.features.build import build_features
+
+    ragged = small_lots[~((small_lots["hours"] == 96.0)
+                          & (small_lots["part_id"].str.endswith("0")))].copy()
+    issues = validate(ragged)
+    assert not [i for i in issues if i.level == "error"]
+    feats = build_features(ragged, library)
+    assert len(feats) > 0 and feats["Iddq__n"].notna().all()
+
+
+def test_lot_with_no_defects_produces_no_panic(library):
+    """A clean lot must not have parts invented for it to flag."""
+    from src.features.build import build_features
+    from src.module_a.robust_z import RobustZTrack
+
+    clean = LotGenerator(library, seed=32).generate(n_lots=2, parts_per_lot=150, prevalence=0.0)
+    feats = build_features(clean, library)
+    assert feats["is_defect"].sum() == 0
+    s = RobustZTrack().fit_score(feats)
+    assert np.isfinite(s).all()
+
+
+def test_all_defect_lot_does_not_break_lot_statistics(library):
+    """The degenerate case: if everything drifts, nothing is an outlier."""
+    from src.features.build import build_features
+    from src.module_a.robust_z import RobustZTrack
+
+    allbad = LotGenerator(library, seed=33).generate(n_lots=1, parts_per_lot=120, prevalence=1.0)
+    feats = build_features(allbad, library)
+    s = RobustZTrack().fit_score(feats)
+    assert np.isfinite(s).all()
+    # Lot-relative scoring cannot flag a uniformly bad lot, and must not pretend
+    # to. This is a real limitation of lot-relative screening, not a bug.
+    assert s.median() < 10

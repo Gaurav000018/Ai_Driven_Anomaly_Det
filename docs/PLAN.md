@@ -123,7 +123,7 @@ Run this the moment fusion (Phase 3) is stable. It will find weaknesses, and you
 If time compresses, drop in this exact sequence. Everything above the line survives.
 
 1. TCN autoencoder (A4) — A1/A3/A5 already cover the space
-2. STDF parser — CSV alone is fine for the demo
+2. STDF parser — CSV alone is fine for the demo  **[CUT — not implemented]**
 3. Next.js dashboard — Streamlit is enough
 4. Wafer spatial/peer term — needs `(x, y)` that may not exist in the data
 5. MLflow registry — a pickle plus a hash will do

@@ -183,6 +183,42 @@ Both are the expensive tiers — every fold refits all five tracks. `--no-closed
 
 ---
 
+## 5b. Explainability — is the explanation actually true?
+
+The third scored metric. An attribution nobody checked is decoration, so the certificates' claims are tested rather than asserted.
+
+```bash
+python scripts/eval_explainability.py
+```
+
+**Faithfulness (deletion test).** Replace the tracks the certificate names as drivers with their population median and see how far the risk falls, against the same deletion applied to randomly chosen and to least-attributed tracks. Run on flagged parts only — deleting the drivers of an already-low score has nowhere to fall.
+
+| Deleted | Mean risk drop |
+|---|---|
+| Top-2 named drivers | **30.4%** |
+| 2 random tracks | 8.1% |
+| Bottom-2 (attributed as irrelevant) | **−0.8%** |
+| **Advantage over random** | **+22.3%** |
+
+Deleting what the certificate names collapses the score; deleting what it calls irrelevant does not move it. That is what a faithful attribution looks like.
+
+**Stability (bootstrap by lot).** Refit the fusion on lot-level bootstrap resamples and compare driver rankings for the same part. Resampling by lot, not by part — a part-level bootstrap leaves almost every lot intact and reports a stability the model does not have.
+
+| | |
+|---|---|
+| Mean Spearman rank correlation | **0.936** (target ≥ 0.85) |
+| Fraction of parts above 0.85 | 86.5% |
+| Minimum | 0.486 |
+
+Passes on the mean, but the minimum is worth stating: **13.5% of parts have explanations that a resample would have ranked differently.** For those, the named driver ordering should not be over-trusted, and a certificate that says "robust-Z 51% | autoencoder 35%" is on firmer ground than the exact percentages suggest.
+
+**Counterfactual validity.** The envelope counterfactual promises every stated bound is achievable because a real accepted part achieved it. Checked literally:
+
+| | |
+|---|---|
+| Conditions checked | 97 |
+| Satisfiable by an accepted lot-mate | **100.0%** |
+
 ## 6. Coverage audit — claims vs measurement
 
 Per-mechanism recall by track, at a shared 5% FPR budget:

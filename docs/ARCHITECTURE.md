@@ -42,7 +42,7 @@ A part sitting comfortably inside the datasheet limit but whose **fitted exponen
 ```mermaid
 flowchart TB
     subgraph L0["L0 - INGESTION"]
-        A1[ATE / STDF files<br/>CSV / XLSX lot sheets] --> A2[STDF + CSV Parser]
+        A1[ATE lot data<br/>CSV / XLSX, wide or long] --> A2[CSV Parser<br/>STDF: not implemented]
         A2 --> A3[Schema validator<br/>unit harmoniser uA / nA / ns]
     end
 
@@ -174,10 +174,10 @@ One artifact, two consumers, zero drift between what we generate and what we cla
 ### L0 — Ingestion
 | Item | Detail |
 |---|---|
-| Inputs | **STDF** (real ATE native format), CSV, XLSX |
+| Inputs | CSV, XLSX (wide or long). **STDF: not implemented** - cut list item 2 |
 | Canonical schema | `part_id, lot_id, wafer_id, x, y, param_name, unit, hours, value, limit_lo, limit_hi, temp_C` |
 | Validation | Contract checks: monotonic hours, unit coherence, missing-timepoint policy, duplicate part IDs |
-| Why it matters | Real fabs export STDF. Reading it makes this *deployable*, not a notebook demo — and judges notice. |
+| Why it matters | Real fabs export STDF, so a reader is the difference between deployable and demo. It was cut for time; `read_wide` handles the spreadsheet form lot data actually arrives in, and the canonical schema means adding STDF later touches one file. |
 
 ### L1 — Feature Fabric
 Per `(part_id, param_name)` trajectory `{(0,v0), (24,v24), (96,v96), (168,v168)}`:
@@ -296,7 +296,7 @@ Ai_Driven_anomaly_det/
 │  └─ mechanisms/  mechanisms.v1.yaml   <- the Defect Mechanism Library
 ├─ data/           raw/ processed/ synthetic/
 ├─ src/
-│  ├─ ingest/      stdf_reader.py · csv_reader.py · validate.py
+│  ├─ ingest/      csv_reader.py · schema.py · validate.py   (stdf_reader.py: CUT, see PLAN)
 │  ├─ features/    trajectory.py · physics_kernel.py · robust_stats.py · shape.py
 │  ├─ module_a/    robust_z.py · mahalanobis.py · iforest.py · tcn_ae.py · physics_residual.py
 │  ├─ module_b/    quantile_gbm.py · conformal.py · safety_slope.py

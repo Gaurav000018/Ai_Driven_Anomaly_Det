@@ -80,6 +80,14 @@ Rejecting on the median catches **0/100** defects. Rejecting on the conformal up
 | **UDE-3** open-set abstention | AUROC 0.744, abstention precision 83.9% (prototype baseline: 0.545) |
 | **UDE-4** subtlety sweep | **Minimum Detectable Drift 2.23 MAD** above the lot median at 90% recall |
 
+### Explainability, measured
+
+| Test | Result |
+|---|---|
+| Faithfulness (deletion) | top-2 drivers **30.4%** risk drop vs **8.1%** random, **−0.8%** for tracks called irrelevant |
+| Stability (bootstrap by lot) | mean rank correlation **0.936**, 86.5% of parts above 0.85 |
+| Counterfactual validity | **100%** of stated pass conditions achievable by a real accepted lot-mate |
+
 UDE-1 worst-case is the honest headline, not the mean. A system averaging 93.8% while recovering 59% of a held-out critical mechanism is a system that loses satellites to that mechanism.
 
 The sweep also confirms why the physics track is carried at all: at full defect amplitude A1 robust-Z leads A5 by 11 points (86% vs 75%), but by subtlety 0.15 A5 has **overtaken** it (60% vs 57%). The level signal decays faster than the kinetic one, because an exponent is a property of the curve's shape rather than its size.
@@ -144,6 +152,8 @@ Stated here rather than waiting for someone to find them.
 - **The fusion trails A4 on subtle defects** (51% vs 60% at subtlety 0.15). Its weights were fitted on full-amplitude defects only and do not transfer to a regime where the tracks' relative usefulness has shifted. The fix - train across a range of subtleties - is identified but not implemented.
 - **Below ~2.2 MAD of lot-relative separation the screen stops meeting a 90% recall target.** That is the Minimum Detectable Drift, and it is a limit worth stating plainly.
 - **The 1000:1 cost ratio drives a 15% yield loss.** That ratio is a configuration choice in `configs/costs.yaml`, not a law.
+- **13.5% of explanations are unstable** (bootstrap rank correlation below 0.85). For those parts the exact driver percentages should not be over-trusted.
+- **STDF is not implemented.** It is cut-list item 2; CSV and wide spreadsheet input work, and the canonical schema means adding it later touches one file.
 - **All results are on synthetic data.** The physics is drawn from JEDEC/MIL-STD models, but no real burn-in dataset has been used.
 
 ## Status
