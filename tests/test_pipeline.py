@@ -382,3 +382,45 @@ def test_units_are_harmonised_on_read(library, tmp_path):
     assert set(raw["unit"]) == {"nA"} and raw["value"].median() > 1000
     assert set(fixed["unit"]) == {"uA"}
     assert fixed["value"].median() == pytest.approx(raw["value"].median() / 1000.0, rel=1e-6)
+
+
+# --------------------------------------------- KNOWN DEFECT: fixed-fraction flagging
+
+
+def test_flag_count_is_currently_independent_of_lot_quality(library):
+    """Documents a real, unfixed flaw found by running the dashboard.
+
+    Nearly every feature the tracks read is lot-relative - robust-z per lot,
+    rank mobility within lot, n_shift against the lot median. That makes each
+    lot's internal score distribution identical by construction, so fixed
+    global thresholds cut the same quantiles in every lot and the system flags
+    a constant fraction whatever the lot actually contains.
+
+    Consequence: a clean lot loses the same number of good parts to scrap as a
+    badly contaminated one, and the system cannot say "this lot is fine".
+
+    This test pins the CURRENT behaviour so the fix is visible when it lands.
+    It asserts the flaw, not the desired behaviour - when an absolute anchor is
+    added to the feature set, this test should start failing and be replaced.
+    """
+    pytest.importorskip("sklearn")
+    from src.api.service import ScoringService
+
+    if not (ROOT / "models" / "fusion.pkl").exists():
+        pytest.skip("run scripts/train_fusion.py first")
+
+    svc = ScoringService()
+    counts = {}
+    for prevalence in (0.0, 0.10):
+        df = LotGenerator(library, seed=int(prevalence * 1000) + 77).generate(
+            n_lots=1, parts_per_lot=500, prevalence=prevalence, lot_prefix="QC"
+        )
+        result = svc.score_lot(df)
+        counts[prevalence] = int((result.decisions["decision"] != "ACCEPT").sum())
+
+    clean, contaminated = counts[0.0], counts[0.10]
+    assert clean == contaminated, (
+        "flag count now varies with lot quality - the fixed-fraction flaw appears "
+        "to be fixed, so replace this test with an assertion of the correct behaviour"
+    )
+    assert clean > 0, "a clean lot is still losing parts to scrap"

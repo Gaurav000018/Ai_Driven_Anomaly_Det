@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sentinel-dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "streamlit", "run", "dashboard/app.py",
+                      "--server.port", "8501",
+                      "--server.headless", "true",
+                      "--browser.gatherUsageStats", "false"],
+      "port": 8501
+    },
+    {
+      "name": "sentinel-api",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "src.api.main:app", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

@@ -268,6 +268,38 @@ Per-mechanism recall by track, at a shared 5% FPR budget:
 
 ---
 
+## 6b. A flaw running the app found that no metric did
+
+Every number in this document is computed by pooling parts across 20 lots, where the fusion ranks defects above healthy parts correctly. Launching the dashboard and switching between lots showed something those numbers cannot:
+
+| Lot | Injected defects | ACCEPT | REVIEW | REJECT |
+|---|---|---|---|---|
+| clean | 0 | 402 | 25 | 73 |
+| normal | 5 | 402 | 25 | 73 |
+| contaminated | 50 | 402 | 25 | 73 |
+
+**Identical, to the part.** Nearly everything the tracks read is lot-relative — robust-z within lot, rank mobility within lot, exponent shift against the lot median — so every lot's internal score distribution is the same by construction. Fixed global thresholds then cut the same quantiles regardless of what the lot contains.
+
+The system is a **fixed-fraction ranker, not an absolute detector**. Within a lot it orders parts correctly, which is what PR-AUC and recall measure and why they look good. But deployed, it would scrap 73 good parts from a perfectly clean lot and flag only 98 from a lot where 50 parts are defective.
+
+The fix is an absolute anchor in the tracks' feature view — headroom against the derated limit, absolute drift magnitude, the unshifted exponent. `headroom_frac` and the raw `n` are computed in the feature fabric but neither reaches the detector tracks. Not yet implemented; pinned by `test_flag_count_is_currently_independent_of_lot_quality`.
+
+This is the strongest argument in the project for running the thing rather than only measuring it.
+
+## 6c. Fusion training regime
+
+UDE-4 found the fusion trailing A4 on subtle defects and blamed full-amplitude-only training. Tested by A/B, equal lot budget, both evaluated on freshly generated sweeps:
+
+| Subtlety | full-amplitude training | mixed-amplitude training | A4 alone |
+|---|---|---|---|
+| 1.00 | 96% | 94% | 94% |
+| 0.50 | 87% | 85% | 85% |
+| 0.25 | 59% | **72%** | 76% |
+| 0.15 | 46% | **69%** | 57% |
+| 0.10 | 22% | **44%** | 31% |
+
+**Mean gain at subtlety ≤ 0.25: +19.1%**, and the mixed fusion now beats A4 at the two subtlest levels. The diagnosis held. Cost is −2% at full amplitude, which is the right trade when the subtle regime is where escapes come from.
+
 ## 7. Bugs the evaluation caught
 
 Recorded because the evaluation catching them is the argument for having it.

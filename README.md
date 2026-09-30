@@ -150,6 +150,8 @@ LE  Unknown Defect Evaluation ── validates everything above
 
 Stated here rather than waiting for someone to find them.
 
+- **The system flags a fixed fraction of every lot, whatever the lot contains.** A lot with zero defects gets the same 98 of 500 parts flagged as a lot with 50 defects. Nearly every feature the tracks read is lot-relative - robust-z per lot, rank mobility within lot, exponent shift against the lot median - so each lot's internal score distribution is identical by construction, and fixed global thresholds cut the same quantiles every time. **The ranking within a lot is sound** (that is what every metric in `docs/METRICS.md` measures), but the deployed decision policy cannot say "this lot is clean". Fixing it needs an absolute anchor in the feature set - headroom against the derated limit, absolute drift magnitude, the unshifted exponent - none of which is currently in the tracks' view. Found by running the dashboard; pinned by a test.
+
 - **Attribution is circular on synthetic data.** The same library generates and diagnoses, so its accuracy on generated defects is not evidence. It is only meaningful against held-out mechanisms (UDE-1) and real data.
 - **MECH-ESD-01 is the real weak spot**, confirmed independently by the coverage audit (best single track 79%) and by UDE-1 (58.9% held-out recall on a critical-severity mechanism). Latent ESD is a flat early offset with a low exponent, so A5 is one-sided against it by construction and A3 barely registers it. Closing this is the top of the backlog.
 - **A5 is weak on HCI and NBTI** (12%, 8%) at full defect amplitude. It detects strong kinetic departures, not subtle ones, at this measurement noise - though it overtakes A1 in the low-amplitude regime.
