@@ -165,3 +165,50 @@ def test_shipped_cost_model_is_coherent():
     costs = CostModel.load()
     assert costs.cost_review < costs.cost_false_positive < costs.cost_false_negative
     assert 0 < costs.max_review_fraction <= 1.0
+
+
+# ------------------------------------------------------------------ open set
+
+
+def test_novelty_detector_excludes_self():
+    """Guards the leak that first read AUROC 1.000 with median distance 0.00.
+
+    Scoring the fitting population without excluding self makes every
+    reference defect its own nearest neighbour at distance zero, which looks
+    like a perfect open-set detector and is nothing of the kind.
+    """
+    from src.knowledge.prototypes import NoveltyDetector
+
+    library = MechanismLibrary.load()
+    lots = LotGenerator(library, seed=21).generate(n_lots=3, parts_per_lot=150, prevalence=0.08)
+    from src.features.build import build_features
+
+    feats = build_features(lots, library)
+    y = feats["is_defect"].astype(int).to_numpy()
+
+    det = NoveltyDetector(library, k=1).fit(feats, y)
+    defects = feats[feats["is_defect"].astype(bool)]
+
+    leaked = det.distance(defects, exclude_self=False)
+    honest = det.distance(defects, exclude_self=True)
+
+    assert leaked.median() == pytest.approx(0.0, abs=1e-9)
+    assert honest.median() > 0.0
+
+
+def test_novelty_threshold_uses_known_defects_only():
+    """tau must be choosable before any unknown mechanism has been seen."""
+    from src.knowledge.prototypes import NoveltyDetector
+    from src.features.build import build_features
+
+    library = MechanismLibrary.load()
+    lots = LotGenerator(library, seed=22).generate(n_lots=3, parts_per_lot=150, prevalence=0.08)
+    feats = build_features(lots, library)
+    y = feats["is_defect"].astype(int).to_numpy()
+
+    det = NoveltyDetector(library, k=1).fit(feats, y, keep=0.95)
+    assert np.isfinite(det.threshold_) and det.threshold_ > 0
+
+    # Roughly 5% of known defects should fall outside their own threshold.
+    flagged = det.is_novel(feats[feats["is_defect"].astype(bool)], exclude_self=True)
+    assert flagged.mean() < 0.25

@@ -93,12 +93,52 @@ Cost model: `C_FN : C_FP = 1000 : 1`, review at 0.25 of a scrapped part, review 
 
 ## 5. Unknown Defect Evaluation
 
-See `reports/ude.json` and the run log. Four tiers:
+The protocol that answers *"you generated your own defects, so of course you detect them"* with numbers. Raw output in `reports/ude.json`.
 
-- **UDE-1** leave-one-mechanism-out, with the closed-set number alongside for honesty
-- **UDE-2** out-of-family forms (stretched exponential, log-time, sigmoid, telegraph) absent from the library
-- **UDE-3** open-set AUROC and abstention
-- **UDE-4** subtlety sweep → Minimum Detectable Drift
+### UDE-2 — out-of-family physics (the strongest evidence here)
+
+Defects generated from functional forms that appear **nowhere in the library** and were never trained on. Amplitudes match the library's, so the test is about shape, not size.
+
+| | |
+|---|---|
+| Defects injected | 80 |
+| Recall @ 5% FPR | **98.8%** |
+| ROC-AUC | **0.999** |
+
+| Novel form | Recall |
+|---|---|
+| stretched exponential `exp(-(t/τ)^β)` | 100% |
+| log-time `A·log(1+t/τ)` | 100% |
+| sigmoid | 100% |
+| telegraph (two-state switching) | 96.2% |
+
+The detector generalises to physics the library cannot express. That is the difference between anomaly detection and pattern-matching, and it is measured rather than asserted.
+
+### UDE-3 — open-set detection and abstention
+
+This one **failed as originally designed**, and finding that out was the point.
+
+| Method | AUROC | Median distance known / unknown | Abstention precision |
+|---|---|---|---|
+| Prototype-centroid distance *(original)* | 0.545 | 0.42 / 0.46 | 37.5% |
+| **k-NN to known-defect examples** | **0.744** | **6.25 / 12.75** | **83.9%** |
+
+Prototype distance was at chance. Eight idealised fingerprint centroids with generous tolerances blanket the signature space densely enough that almost any part lands near *something*, so the `UNKNOWN-MECHANISM` path was firing at random.
+
+Comparing against the *actual* known-defect examples instead works: it abstains on 32.5% of unknown-physics defects with 5.0% false abstention, and when it abstains it is right 84% of the time.
+
+This forced a design separation worth keeping: **the prototypes name a mechanism, the novelty detector decides whether to trust the name.** Both now run, with the novelty flag overriding.
+
+Modest, and stated as modest — a third of unknown-physics defects get an explicit "mechanism unrecognised, send to review" rather than a confident wrong label.
+
+### UDE-1 / UDE-4
+
+Leave-one-mechanism-out and the subtlety sweep are the expensive tiers (every fold refits all five tracks). Run them with:
+
+```bash
+python scripts/run_ude.py --only lomo --no-closed-set --lomo-splits 3
+python scripts/run_ude.py --only sweep
+```
 
 ---
 
