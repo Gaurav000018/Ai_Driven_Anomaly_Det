@@ -152,9 +152,27 @@ Per the reporting rule stated in the architecture, the worst case is the headlin
 
 Six of eight mechanisms generalise perfectly to physics never seen in training, which is a strong result. Latent ESD does not, and the reason is structural rather than incidental: it is a flat early offset with a *low* exponent, so A5 is one-sided against it by construction, A3 barely registers it (7%), and with no ESD examples in training the fusion never learns to lean on A1's 0h signal. Both independent tiers — the coverage audit and UDE-1 — converge on the same weak spot, which is the protocol working as intended.
 
-### UDE-4 — subtlety sweep
+### UDE-4 — subtlety sweep and Minimum Detectable Drift
 
-Defect amplitude is scaled down and recall re-measured at a fixed false-alarm budget, yielding the Minimum Detectable Drift in MAD above the lot median. See `reports/sweep.log`.
+Defect amplitude scaled down, recall re-measured at a fixed 5% false-alarm budget. 8 lots x 300 parts per point.
+
+| Subtlety | Separation | Fusion | A1 robust-Z | A4 autoencoder | A5 physics residual |
+|---|---|---|---|---|---|
+| 1.00 | 3.83 MAD | 99% | 86% | 99% | 75% |
+| 0.70 | 2.57 MAD | 93% | 79% | 93% | 75% |
+| 0.50 | 1.95 MAD | 88% | 75% | 89% | 65% |
+| 0.35 | 1.71 MAD | 86% | 82% | 88% | 69% |
+| 0.25 | 1.53 MAD | 74% | 68% | 81% | 58% |
+| 0.15 | 1.35 MAD | 51% | 57% | 60% | **60%** |
+| 0.10 | 1.18 MAD | 31% | 32% | 38% | **36%** |
+
+> **Minimum Detectable Drift (90% recall): subtlety 0.59, or 2.23 MAD above the lot median.**
+
+That is the spec number to quote. Below roughly 2.2 MAD of lot-relative separation, this system stops meeting a 90% recall target — and saying so is more useful than any headline recall figure, because it tells a reliability engineer what the screen can and cannot promise.
+
+**A prediction from Phase 1, now confirmed.** A5 was committed with the note that it "is expected to earn its place at low defect subtlety, where level outliers are not yet visible." The ordering does invert exactly as predicted: at full amplitude A1 leads A5 by 11 points (86% vs 75%), and by subtlety 0.15 A5 has overtaken it (60% vs 57%), holding at 0.10 (36% vs 32%). The level signal decays faster than the kinetic one, because an exponent is a property of the curve's *shape* rather than its size. This is the clearest justification in the project for carrying the physics track at all.
+
+**A new problem the sweep found.** The fusion matches A4 at full amplitude (99% vs 99%) but *trails* it in the subtle regime — 51% vs 60% at subtlety 0.15, 31% vs 38% at 0.10. The cause is straightforward: the fusion's weights were fitted on full-amplitude defects only, so they do not transfer to a regime where the relative usefulness of the tracks has changed. The fix is to train the fusion across a range of subtleties rather than at one. Not yet done.
 
 ```bash
 python scripts/run_ude.py --only lomo --no-closed-set --lomo-splits 3

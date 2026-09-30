@@ -78,8 +78,11 @@ Rejecting on the median catches **0/100** defects. Rejecting on the conformal up
 | **UDE-1** leave-one-mechanism-out | worst case **58.9%** (latent ESD, critical), mean 93.8%, six of eight at 100% |
 | **UDE-2** out-of-family physics | **98.8%** recall, ROC-AUC 0.999 on forms absent from the library |
 | **UDE-3** open-set abstention | AUROC 0.744, abstention precision 83.9% (prototype baseline: 0.545) |
+| **UDE-4** subtlety sweep | **Minimum Detectable Drift 2.23 MAD** above the lot median at 90% recall |
 
 UDE-1 worst-case is the honest headline, not the mean. A system averaging 93.8% while recovering 59% of a held-out critical mechanism is a system that loses satellites to that mechanism.
+
+The sweep also confirms why the physics track is carried at all: at full defect amplitude A1 robust-Z leads A5 by 11 points (86% vs 75%), but by subtlety 0.15 A5 has **overtaken** it (60% vs 57%). The level signal decays faster than the kinetic one, because an exponent is a property of the curve's shape rather than its size.
 
 ---
 
@@ -137,7 +140,9 @@ Stated here rather than waiting for someone to find them.
 
 - **Attribution is circular on synthetic data.** The same library generates and diagnoses, so its accuracy on generated defects is not evidence. It is only meaningful against held-out mechanisms (UDE-1) and real data.
 - **MECH-ESD-01 is the real weak spot**, confirmed independently by the coverage audit (best single track 79%) and by UDE-1 (58.9% held-out recall on a critical-severity mechanism). Latent ESD is a flat early offset with a low exponent, so A5 is one-sided against it by construction and A3 barely registers it. Closing this is the top of the backlog.
-- **A5 is weak on HCI and NBTI** (12%, 8%). It detects strong kinetic departures, not subtle ones, at this measurement noise.
+- **A5 is weak on HCI and NBTI** (12%, 8%) at full defect amplitude. It detects strong kinetic departures, not subtle ones, at this measurement noise - though it overtakes A1 in the low-amplitude regime.
+- **The fusion trails A4 on subtle defects** (51% vs 60% at subtlety 0.15). Its weights were fitted on full-amplitude defects only and do not transfer to a regime where the tracks' relative usefulness has shifted. The fix - train across a range of subtleties - is identified but not implemented.
+- **Below ~2.2 MAD of lot-relative separation the screen stops meeting a 90% recall target.** That is the Minimum Detectable Drift, and it is a limit worth stating plainly.
 - **The 1000:1 cost ratio drives a 15% yield loss.** That ratio is a configuration choice in `configs/costs.yaml`, not a law.
 - **All results are on synthetic data.** The physics is drawn from JEDEC/MIL-STD models, but no real burn-in dataset has been used.
 
