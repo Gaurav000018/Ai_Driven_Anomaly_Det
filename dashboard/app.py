@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
 import plotly.graph_objects as go  # noqa: E402
 
 from src.api.service import ScoringService  # noqa: E402
+from src.knowledge.library import MechanismLibrary  # noqa: E402
 from src.fusion.adaptive_burnin import extend_burnin_whatif  # noqa: E402
 from src.ingest.csv_reader import read_csv  # noqa: E402
 
@@ -39,7 +40,7 @@ def load_service() -> ScoringService:
 
 @st.cache_data
 def load_data(path: str) -> pd.DataFrame:
-    return read_csv(path)
+    return read_csv(path, library=MechanismLibrary.load())
 
 
 @st.cache_data

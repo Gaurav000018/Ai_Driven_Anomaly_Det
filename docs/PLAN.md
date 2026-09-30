@@ -159,7 +159,7 @@ Note that the library and UDE sit below the line together, and deliberately so: 
 3. **Module B (60 s)** — forecast V168h for a borderline part. Point prediction says 40 µA, pass. Conformal P90 says 62 µA, **reject**. *"The mean would have let it fly."*
 4. **Explainability (60 s)** — open one certificate, read it aloud. It *names the mechanism*. Show the counterfactual and the audit hash.
 5. **"But you made up your own defects" (45 s)** — pre-empt it. Put up the LOMO table: *"we removed electromigration from training entirely and still caught it at X % recall"*, then UDE-2: *"these defect shapes use physics that isn't in our library at all."* Show the UNKNOWN abstention path. **This is the slide that wins the room** — answer the objection before it is raised.
-6. **The product (45 s)** — What-If console: adaptive burn-in ends 82 % of parts at 96 h, same escape rate, 38 % less oven time. Close on the cost curve.
+6. **The product (45 s)** — What-If console: adaptive burn-in releases 46 % of parts at 96 h for **19.8 % less oven time at the same escape count** (measured, not modelled). Close on the cost curve.
 
 ---
 

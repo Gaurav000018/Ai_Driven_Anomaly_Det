@@ -32,7 +32,7 @@ def main() -> int:
     args = ap.parse_args()
 
     lib = MechanismLibrary.load()
-    df = read_csv(args.data)
+    df = read_csv(args.data, library=lib)
 
     if args.cache.exists() and not args.rebuild:
         feats = pd.read_parquet(args.cache)

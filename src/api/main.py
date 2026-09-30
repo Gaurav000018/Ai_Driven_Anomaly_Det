@@ -53,6 +53,14 @@ def service() -> ScoringService:
     if _service is None:
         try:
             _service = ScoringService()
+            # Fit the drift predictor on the reference measurements if they are
+            # on disk. Without it /predict/drift returns 503 with an
+            # explanation rather than failing deep inside LightGBM.
+            ref = ROOT / "data" / "synthetic" / "burnin.csv"
+            if ref.exists():
+                from src.ingest.csv_reader import read_csv as _read
+
+                _service.fit_drift(_read(ref, library=_service.library))
         except FileNotFoundError as exc:
             raise HTTPException(503, f"model not available; run scripts/train_fusion.py first ({exc})")
         except RuntimeError as exc:
@@ -146,36 +154,31 @@ def predict_drift(req: DriftRequest) -> DriftResponse:
         raise HTTPException(400, f"unknown parameter '{req.parameter}'; "
                                  f"known: {svc.library.parameter_names()}")
 
+    if svc.drift_ is None:
+        raise HTTPException(
+            503,
+            "drift model not fitted. The API fits it from a multi-lot reference "
+            "population at startup; a single incoming lot cannot support conformal "
+            "calibration.",
+        )
+
     try:
-        ds = make_dataset(df, svc.library, parameter=req.parameter, horizon=req.horizon)
-    except ValueError as exc:
+        fc = svc.forecast_drift(df, req.parameter, horizon=req.horizon)
+    except (ValueError, KeyError) as exc:
         raise HTTPException(400, str(exc))
 
-    idx = np.arange(len(ds.y))
-    train_idx, calib_idx = split_train_calib(ds, idx)
-    model = QuantileDriftModel(quantiles=(req.alpha / 2, 0.5, 1 - req.alpha / 2)).fit(ds, train_idx)
-    q_cal = model.predict_quantiles(ds, calib_idx)
-    cal = ConformalCalibrator(alpha=req.alpha).calibrate(
-        q_cal.iloc[:, 0].to_numpy(), q_cal.iloc[:, -1].to_numpy(),
-        ds.y.iloc[calib_idx].to_numpy(dtype=float),
-    )
-    q = model.predict_quantiles(ds, idx)
-    median = q["q50"].to_numpy() if "q50" in q.columns else q.iloc[:, 1].to_numpy()
-    interval = cal.apply(q.iloc[:, 0].to_numpy(), median, q.iloc[:, -1].to_numpy())
-
-    items: List[DriftForecastItem] = []
-    for i, pid in enumerate(ds.X.index):
-        items.append(
-            DriftForecastItem(
-                part_id=str(pid),
-                lower=float(interval.lower[i]),
-                median=float(interval.median[i]),
-                upper=float(interval.upper[i]),
-                derated_limit=spec.derated_limit,
-                breaches_on_upper=bool(interval.upper[i] > spec.derated_limit),
-                breaches_on_median=bool(interval.median[i] > spec.derated_limit),
-            )
+    items: List[DriftForecastItem] = [
+        DriftForecastItem(
+            part_id=str(pid),
+            lower=float(fc.lower.loc[pid]),
+            median=float(fc.median.loc[pid]),
+            upper=float(fc.upper.loc[pid]),
+            derated_limit=spec.derated_limit,
+            breaches_on_upper=bool(fc.upper.loc[pid] > spec.derated_limit),
+            breaches_on_median=bool(fc.median.loc[pid] > spec.derated_limit),
         )
+        for pid in fc.median.index
+    ]
 
     return DriftResponse(
         parameter=req.parameter,

@@ -37,6 +37,7 @@ from ..module_a.iforest import IsolationTrack
 from ..module_a.mahalanobis import MahalanobisTrack
 from ..module_a.physics_residual import PhysicsResidualTrack
 from ..module_a.robust_z import RobustZTrack
+from ..module_b.pipeline import DriftPipeline
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -101,6 +102,8 @@ class ScoringService:
         # novelty detector does that job at 0.744 with 84% abstention
         # precision, so the two are kept separate.
         self.novelty_: Optional[NoveltyDetector] = None
+        self.drift_: Optional[DriftPipeline] = None
+        self.reference_df_: Optional[pd.DataFrame] = None
         self.tracks = default_tracks()
         self.reference_: Optional[pd.DataFrame] = None
         self.counterfactual_: Optional[CounterfactualExplainer] = None
@@ -143,6 +146,25 @@ class ScoringService:
         return self
 
     # ---------------------------------------------------------------- score
+
+    def fit_drift(self, df: pd.DataFrame) -> "ScoringService":
+        """Fit the drift predictor on a multi-lot reference population.
+
+        Kept separate from fit_reference because it needs raw measurements
+        rather than the feature frame, and because conformal calibration
+        requires several lots - which is exactly what a single incoming lot
+        cannot provide.
+        """
+        self.reference_df_ = df
+        self.drift_ = DriftPipeline().fit(df, self.library)
+        return self
+
+    def forecast_drift(self, df: pd.DataFrame, parameter: str, horizon: float = 168.0):
+        if self.drift_ is None:
+            raise RuntimeError(
+                "drift model not fitted; call fit_drift with a multi-lot reference population"
+            )
+        return self.drift_.forecast_new(df, self.library, parameter, horizon=horizon)
 
     def score_lot(self, df: pd.DataFrame, validate: bool = True) -> LotScore:
         if self.reference_ is None:

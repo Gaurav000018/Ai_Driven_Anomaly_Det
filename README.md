@@ -88,6 +88,10 @@ Rejecting on the median catches **0/100** defects. Rejecting on the conformal up
 | Stability (bootstrap by lot) | mean rank correlation **0.936**, 86.5% of parts above 0.85 |
 | Counterfactual validity | **100%** of stated pass conditions achievable by a real accepted lot-mate |
 
+### Adaptive burn-in (measured)
+
+Releasing parts early at 96 h, scored using only the evidence available at 96 h: **19.8% of oven time saved with zero additional escapes** (4,625 of 10,000 parts). The 24 h checkpoint is unusable — two timepoints cannot constrain a two-parameter kernel.
+
 UDE-1 worst-case is the honest headline, not the mean. A system averaging 93.8% while recovering 59% of a held-out critical mechanism is a system that loses satellites to that mechanism.
 
 The sweep also confirms why the physics track is carried at all: at full defect amplitude A1 robust-Z leads A5 by 11 points (86% vs 75%), but by subtlety 0.15 A5 has **overtaken** it (60% vs 57%). The level signal decays faster than the kinetic one, because an exponent is a property of the curve's shape rather than its size.

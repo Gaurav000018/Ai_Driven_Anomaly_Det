@@ -124,7 +124,7 @@ def main() -> int:
     args = ap.parse_args()
 
     lib = MechanismLibrary.load()
-    df = read_csv(args.data)
+    df = read_csv(args.data, library=lib)
     panel = build_panel(df)
 
     for parameter in lib.parameter_names():

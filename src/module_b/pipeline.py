@@ -25,9 +25,21 @@ from .safety_slope import SafetySlope
 def split_train_calib(
     ds: DriftDataset, train_pool: np.ndarray, calib_frac: float = 0.3, seed: int = 0
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Split the training pool by lot, never by part - conformal needs it."""
+    """Split the training pool by lot, never by part - conformal needs it.
+
+    Requires at least two lots. With one lot the whole pool becomes the
+    calibration set and training is left empty, which surfaced as an opaque
+    "Input data must be 2 dimensional and non empty" from LightGBM rather than
+    anything a caller could act on.
+    """
     lots = ds.groups.iloc[train_pool].to_numpy()
     uniq = np.unique(lots)
+    if len(uniq) < 2:
+        raise ValueError(
+            f"conformal calibration needs at least 2 lots, got {len(uniq)}. "
+            "Fit the drift model on a multi-lot reference population and predict "
+            "with it, rather than fitting on a single lot."
+        )
     rng = np.random.default_rng(seed)
     rng.shuffle(uniq)
     n_calib = max(1, int(round(len(uniq) * calib_frac)))
@@ -82,6 +94,27 @@ class DriftPipeline:
             self.calibrators_[parameter] = cal
             self.slopes_[parameter] = slope
         return self
+
+    def forecast_new(
+        self,
+        df: pd.DataFrame,
+        library: MechanismLibrary,
+        parameter: str,
+        horizon: float = 168.0,
+    ) -> DriftForecast:
+        """Forecast for parts the pipeline has never seen.
+
+        The model, the conformal correction and the safe slope all come from
+        the multi-lot reference population; only the lot-relative input
+        features are computed from the incoming data. This is the right split
+        of responsibilities - a single incoming lot cannot support a
+        calibration set, and fitting on one anyway is what produced an empty
+        training split in the API.
+        """
+        if parameter not in self.models_:
+            raise KeyError(f"drift model not fitted for '{parameter}'")
+        ds = make_dataset(df, library, parameter=parameter, horizon=horizon, require_target=False)
+        return self.forecast(parameter, ds=ds, idx=np.arange(len(ds.y)))
 
     def forecast(self, parameter: str, ds: Optional[DriftDataset] = None, idx: Optional[np.ndarray] = None) -> DriftForecast:
         ds = ds if ds is not None else self.datasets_[parameter]

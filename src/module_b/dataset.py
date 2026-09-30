@@ -43,6 +43,7 @@ def make_dataset(
     input_hours: Tuple[float, ...] = (0.0, 24.0),
     horizon: float = 168.0,
     panel: Optional[Panel] = None,
+    require_target: bool = True,
 ) -> DriftDataset:
     bad = [h for h in input_hours if h >= horizon]
     if bad:
@@ -53,9 +54,20 @@ def make_dataset(
     wide = panel.param(parameter)
 
     available = set(np.round(panel.hours, 6))
-    missing = [h for h in (*input_hours, horizon) if round(h, 6) not in available]
-    if missing:
-        raise ValueError(f"hours {missing} absent from the data; present: {sorted(available)}")
+    missing_inputs = [h for h in input_hours if round(h, 6) not in available]
+    if missing_inputs:
+        raise ValueError(f"input hours {missing_inputs} absent from the data; present: {sorted(available)}")
+
+    # The horizon is required for TRAINING and absent by definition when
+    # forecasting a part still in the oven - which is the whole point of the
+    # module. Requiring it unconditionally made the predictor unusable for
+    # exactly the parts it exists to screen.
+    has_target = round(horizon, 6) in available
+    if has_target is False and require_target:
+        raise ValueError(
+            f"horizon {horizon}h absent from the data; present: {sorted(available)}. "
+            "Pass require_target=False to build a prediction-only dataset."
+        )
 
     lot = wide.index.get_level_values("lot_id").astype(str)
     lot = pd.Series(lot, index=wide.index.get_level_values("part_id"), name="lot_id")
@@ -86,13 +98,18 @@ def make_dataset(
     feats["lot_median_last_in"] = last_in.groupby(lot.to_numpy(), observed=True).transform("median")
     feats["headroom_frac"] = (spec.derated_limit - last_in) / spec.derated_limit
 
-    y = pd.Series(wide[horizon].to_numpy(dtype=float), index=idx, name=f"v_{int(horizon)}h")
+    if has_target:
+        y = pd.Series(wide[horizon].to_numpy(dtype=float), index=idx, name=f"v_{int(horizon)}h")
+    else:
+        y = pd.Series(np.nan, index=idx, name=f"v_{int(horizon)}h", dtype=float)
 
     meta_cols = [c for c in ("lot_id", "is_defect", "mechanism_id", "severity") if c in panel.meta.columns]
     meta = panel.meta.loc[idx, meta_cols].copy()
     meta["v0"] = v_first
 
-    ok = feats.notna().all(axis=1) & y.notna()
+    ok = feats.notna().all(axis=1)
+    if has_target:
+        ok &= y.notna()
     return DriftDataset(
         X=feats[ok],
         y=y[ok],

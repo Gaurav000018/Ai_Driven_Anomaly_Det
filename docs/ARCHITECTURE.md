@@ -256,7 +256,9 @@ That final block — the **immutable audit trail** — is what makes the system 
 ### L5 — Delivery
 - **FastAPI**: `POST /score/lot`, `POST /predict/drift`, `GET /explain/{part_id}`, `GET /report/{lot_id}`
 - **Dashboard**: lot heatmap, spaghetti trajectory plot with anomalies highlighted, wafer map, per-part certificate, cost/confusion panel.
-- **Digital Twin / What-If console** — the ROI story: *"extend burn-in to 240 h -> 3 more escapes caught, +$8k cost"*; and **Adaptive Burn-In**, stopping early at 96 h for the ~82 % of parts already confidently clean and extending only the uncertain tail. Same safety, less oven time. This is what turns a detector into a *product*.
+- **Digital Twin / What-If console** — the ROI story: *"extend burn-in to 240 h -> 3 more escapes caught, +$8k cost"*; and **Adaptive Burn-In**, stopping early at 96 h for the parts already confidently clean and extending only the uncertain tail.
+
+> **Measured** (`scripts/eval_adaptive_burnin.py`): 4,625 of 10,000 parts release at 96 h, saving **19.8 % of oven time with zero additional escapes**. An earlier draft of this document claimed 82 % of parts and 38 % of oven time; those were illustrative figures written before anything measured it, and the measurement does not support them. The 24 h checkpoint is unusable at all - two timepoints cannot constrain a two-parameter kernel - so 96 h is the earliest a part can be released.
 
 ### SIM — Physics Defect Injector (our unfair advantage)
 Nobody hands us a labelled latent-defect dataset, so we **build the ground truth we are scored against**:

@@ -73,9 +73,22 @@ def harmonise_units(df: pd.DataFrame, target: Dict[str, str]) -> pd.DataFrame:
     return out
 
 
-def read_csv(path: Path | str) -> pd.DataFrame:
-    """Read an already-canonical long-format CSV."""
-    return coerce(pd.read_csv(path))
+def read_csv(path: Path | str, library=None, harmonise: bool = True) -> pd.DataFrame:
+    """Read an already-canonical long-format CSV.
+
+    When a mechanism library is supplied, every measurement is converted into
+    that parameter's canonical unit before anything else touches it. This was
+    written and then left unwired for several phases, which is the worst of
+    both worlds: a file of nA readings labelled correctly would have been
+    silently treated as uA, corrupting every lot median, MAD and z-score
+    downstream with no error anywhere. The library is the one source of truth
+    for units, so it is also the right place to convert against.
+    """
+    df = coerce(pd.read_csv(path))
+    if library is not None and harmonise and "unit" in df.columns:
+        target = {p.name: p.unit for p in library.parameters()}
+        df = coerce(harmonise_units(df, target))
+    return df
 
 
 def read_wide(

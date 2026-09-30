@@ -219,6 +219,30 @@ Passes on the mean, but the minimum is worth stating: **13.5% of parts have expl
 | Conditions checked | 97 |
 | Satisfiable by an accepted lot-mate | **100.0%** |
 
+## 5c. Adaptive burn-in — measured, not modelled
+
+```bash
+python scripts/eval_adaptive_burnin.py
+```
+
+Each checkpoint is scored using **only** the measurements available at that checkpoint — features, tracks, fusion and threshold all refitted per truncation, out-of-fold by lot. A model that has seen 168 h data cannot be asked whether 96 h would have been enough.
+
+| | |
+|---|---|
+| Parts | 10,000 |
+| Baseline oven time | 1,680,000 part-hours |
+| Adaptive oven time | 1,347,000 part-hours |
+| **Oven time saved** | **19.8%** |
+| Parts released at 96 h | 4,625 |
+| Escapes, full duration | 1 |
+| Escapes, adaptive | **1** (unchanged) |
+
+The escape budget is fixed first and the saving is whatever that leaves over. Framing it the other way round — "save 38% of oven time and see what it costs" — is how a screening programme gets quietly degraded.
+
+**The 24 h checkpoint is unusable.** Two timepoints cannot constrain a two-parameter kernel, so there is no kinetic information at 24 h at all and 96 h is the earliest a part can be released. That is a property of the measurement schedule, not something to engineer around.
+
+**A corrected claim.** ARCHITECTURE.md previously asserted "82% of parts at 96 h, 38% less oven time". Those figures were written before anything measured them and the measurement does not support them; the real numbers are 46% of parts and 19.8% of oven time. Both documents now carry the measured values.
+
 ## 6. Coverage audit — claims vs measurement
 
 Per-mechanism recall by track, at a shared 5% FPR budget:

@@ -278,3 +278,107 @@ def test_all_defect_lot_does_not_break_lot_statistics(library):
     # Lot-relative scoring cannot flag a uniformly bad lot, and must not pretend
     # to. This is a real limitation of lot-relative screening, not a bug.
     assert s.median() < 10
+
+
+# ------------------------------------------------------- API (integration)
+
+
+@pytest.fixture(scope="module")
+def client():
+    """Skip rather than fail if the model has not been trained in this checkout."""
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    if not (ROOT / "models" / "fusion.pkl").exists():
+        pytest.skip("run scripts/train_fusion.py first")
+    from src.api.main import app
+
+    return TestClient(app)
+
+
+@pytest.fixture(scope="module")
+def one_lot(library):
+    from src.ingest.csv_reader import read_csv
+
+    path = ROOT / "data" / "synthetic" / "burnin.csv"
+    if not path.exists():
+        pytest.skip("run scripts/generate_data.py first")
+    df = read_csv(path, library=library)
+    lot = df[df["lot_id"].astype(str) == sorted(df["lot_id"].astype(str).unique())[0]]
+    cols = ["part_id", "lot_id", "param_name", "unit", "hours", "value",
+            "wafer_id", "x", "y", "limit_hi", "temp_C"]
+    return {"measurements": lot[cols].to_dict(orient="records")}
+
+
+def test_health_and_mechanisms(client):
+    assert client.get("/health").status_code == 200
+    body = client.get("/mechanisms").json()
+    assert len(body["mechanisms"]) >= 5
+
+
+def test_score_lot_then_explain(client, one_lot):
+    """The path a QA engineer actually walks: score a lot, question a part."""
+    r = client.post("/score/lot", json=one_lot)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["summary"]["n_parts"] > 0
+
+    flagged = [d for d in body["decisions"] if d["decision"] != "ACCEPT"]
+    assert flagged, "expected at least one flagged part in a lot with injected defects"
+
+    cert = client.get(f"/explain/{flagged[0]['part_id']}")
+    assert cert.status_code == 200
+    text = cert.json()["text"]
+    assert "Escape Risk" in text and "Counterfactual" in text and "Audit" in text
+
+
+def test_predict_drift_uses_prefitted_model(client, one_lot):
+    """Regression: fitting per request left an empty training split on one lot."""
+    r = client.post("/predict/drift", json={**one_lot, "parameter": "Iddq"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["forecasts"]) > 0
+    f = body["forecasts"][0]
+    assert f["lower"] <= f["median"] <= f["upper"]
+
+
+def test_single_lot_cannot_calibrate_conformal(library, small_lots):
+    """The bug the API test exposed, pinned at its source."""
+    from src.module_b.dataset import make_dataset
+    from src.module_b.pipeline import split_train_calib
+
+    one = small_lots[small_lots["lot_id"] == small_lots["lot_id"].iloc[0]]
+    ds = make_dataset(one, library, parameter="Iddq")
+    with pytest.raises(ValueError, match="at least 2 lots"):
+        split_train_calib(ds, np.arange(len(ds.y)))
+
+
+def test_prediction_only_dataset_without_target(library, small_lots):
+    """Forecasting a part still in the oven: the 168h column does not exist yet."""
+    from src.module_b.dataset import make_dataset
+
+    early = small_lots[small_lots["hours"] <= 96.0]
+    with pytest.raises(ValueError, match="require_target=False"):
+        make_dataset(early, library, parameter="Iddq")
+
+    ds = make_dataset(early, library, parameter="Iddq", require_target=False)
+    assert len(ds.X) > 0 and ds.y.isna().all()
+
+
+def test_units_are_harmonised_on_read(library, tmp_path):
+    """A file of nA readings must not be silently treated as uA."""
+    from src.ingest.csv_reader import read_csv
+
+    rows = []
+    for part in range(40):
+        for h in (0.0, 24.0, 96.0, 168.0):
+            rows.append({"part_id": f"P{part:03d}", "lot_id": "L1", "param_name": "Iddq",
+                         "unit": "nA", "hours": h, "value": 10_000.0 + h})
+    path = tmp_path / "wrong_units.csv"
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+    raw = read_csv(path)
+    fixed = read_csv(path, library=library)
+    assert set(raw["unit"]) == {"nA"} and raw["value"].median() > 1000
+    assert set(fixed["unit"]) == {"uA"}
+    assert fixed["value"].median() == pytest.approx(raw["value"].median() / 1000.0, rel=1e-6)
