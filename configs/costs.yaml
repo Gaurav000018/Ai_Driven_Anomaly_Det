@@ -1,0 +1,21 @@
+# Asymmetric screening economics.
+#
+# A false negative is a latent defect that flies. A false positive is a $40 part
+# in the scrap bin. Thresholds are chosen by minimising expected cost with these
+# numbers, NOT by maximising F1 - see src/fusion/cost_decision.py.
+
+cost_false_negative: 1000.0   # escape: rework, mission risk, launch delay
+cost_false_positive: 1.0      # scrapped good part
+cost_review: 12.0             # manual QA inspection of one part
+
+# Decision bands on the fused Escape Risk score (0-100).
+# Parts attributed to an UNKNOWN mechanism are floored into REVIEW regardless
+# of score - see src/fusion/cost_decision.py.
+bands:
+  accept_below: 30.0
+  reject_above: 70.0
+
+# Evaluation targets
+target_recall: 0.95           # minimum acceptable recall on held-out defects
+max_false_positive_rate: 0.05
+fbeta: 5.0                    # beta=5 weights recall 25x over precision

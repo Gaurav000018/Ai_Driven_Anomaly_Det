@@ -1,0 +1,323 @@
+# =====================================================================
+# SENTINEL-BI  ·  Defect Mechanism Library  ·  v1
+# =====================================================================
+# This file is the system's knowledge base. It is read in TWO directions:
+#
+#   forward  (generative)  -> src/simulate/defect_injector.py reads `physics`
+#                             to synthesise labelled defects.
+#   inverse  (diagnostic)  -> src/knowledge/prototypes.py reads `fingerprint`
+#                             to name the mechanism behind a rejection.
+#
+# Adding a mechanism is a config commit, not a code change. After adding one,
+# rerun the leave-one-mechanism-out evaluation (src/eval/unknown_defect.py).
+# =====================================================================
+
+version: 1
+time_ref_hours: 168.0          # drift amplitudes are expressed at this horizon
+
+# ---------------------------------------------------------------------
+# Measured parameters. `limit_hi` is the datasheet maximum; latent defects
+# are deliberately generated to stay BELOW it so static screening passes them.
+# ---------------------------------------------------------------------
+parameters:
+  - name: Iddq
+    description: Quiescent supply current
+    unit: uA
+    limit_hi: 50.0
+    derate: 0.8
+    nominal_median: 10.0
+    nominal_sigma_log: 0.18
+    meas_noise_frac: 0.015
+
+  - name: I_leak
+    description: Junction leakage current
+    unit: nA
+    limit_hi: 500.0
+    derate: 0.8
+    nominal_median: 120.0
+    nominal_sigma_log: 0.22
+    meas_noise_frac: 0.020
+
+  - name: t_pd
+    description: Propagation delay
+    unit: ns
+    limit_hi: 12.0
+    derate: 0.85
+    nominal_median: 8.0
+    nominal_sigma_log: 0.06
+    meas_noise_frac: 0.008
+
+# ---------------------------------------------------------------------
+# Mechanisms
+# ---------------------------------------------------------------------
+# physics.form values implemented in src/simulate/defect_injector.py:
+#   power_law | step | hump | variance_inflation | early_offset | exponential
+#
+# All amplitude params named `*_frac` are fractions of the part's own v0,
+# which keeps the library unit-agnostic across Iddq / I_leak / t_pd.
+# ---------------------------------------------------------------------
+mechanisms:
+
+  - id: MECH-NOM-00
+    name: Nominal ageing
+    family: nominal
+    defect: false
+    physics:
+      form: power_law
+      params:
+        n: [0.12, 0.22]
+        A_frac: [0.010, 0.050]
+    affects: [Iddq, I_leak, t_pd]
+    fingerprint:
+      n_shift_vs_lot: [-0.04, 0.04]
+      r2_min: 0.90
+      monotonic: true
+      jump_count: 0
+      rank_mobility: low
+      noise_ratio: [0.5, 1.5]
+    severity: none
+    reference: JEDEC JESD22 baseline
+    detectability:
+      static_limits: none
+      robust_z: none
+      mahalanobis: none
+      iforest: none
+      autoencoder: none
+      physics_residual: none
+
+  - id: MECH-TDDB-01
+    name: Gate-oxide pinhole (TDDB precursor)
+    family: dielectric_breakdown
+    defect: true
+    physics:
+      form: power_law
+      params:
+        n: [0.35, 0.65]
+        A_frac: [0.25, 0.90]
+    affects: [Iddq, I_leak]
+    fingerprint:
+      n_shift_vs_lot: [0.15, 0.50]
+      r2_min: 0.95
+      monotonic: true
+      jump_count: 0
+      rank_mobility: high
+      noise_ratio: [0.5, 1.6]
+    severity: critical
+    reference: JEDEC JEP122 / MIL-STD-883 TM1005
+    detectability:
+      static_limits: none
+      robust_z: partial
+      mahalanobis: partial
+      iforest: strong
+      autoencoder: strong
+      physics_residual: strong
+
+  - id: MECH-HCI-01
+    name: Hot-carrier injection
+    family: carrier_injection
+    defect: true
+    physics:
+      form: power_law
+      params:
+        n: [0.28, 0.42]
+        A_frac: [0.12, 0.35]
+    affects: [t_pd, Iddq]
+    fingerprint:
+      n_shift_vs_lot: [0.08, 0.26]
+      r2_min: 0.93
+      monotonic: true
+      jump_count: 0
+      rank_mobility: medium
+      noise_ratio: [0.5, 1.6]
+    severity: major
+    reference: JEDEC JEP122 section 4
+    detectability:
+      static_limits: none
+      robust_z: weak
+      mahalanobis: strong
+      iforest: partial
+      autoencoder: partial
+      physics_residual: strong
+
+  - id: MECH-NBTI-01
+    name: Accelerated NBTI threshold drift
+    family: bias_temperature_instability
+    defect: true
+    physics:
+      form: power_law
+      params:
+        n: [0.22, 0.32]
+        A_frac: [0.18, 0.45]
+    affects: [t_pd, Iddq]
+    fingerprint:
+      n_shift_vs_lot: [0.05, 0.16]
+      r2_min: 0.94
+      monotonic: true
+      jump_count: 0
+      rank_mobility: medium
+      noise_ratio: [0.5, 1.5]
+    severity: major
+    reference: JEDEC JEP122 / NBTI power-law model
+    detectability:
+      static_limits: none
+      robust_z: weak
+      mahalanobis: partial
+      iforest: partial
+      autoencoder: partial
+      physics_residual: strong
+
+  - id: MECH-EM-01
+    name: Electromigration void nucleation
+    family: interconnect
+    defect: true
+    physics:
+      form: step
+      params:
+        n: [0.12, 0.22]
+        A_frac: [0.01, 0.05]
+        step_frac: [0.15, 0.45]
+        step_hour: [24.0, 96.0]
+    affects: [Iddq, I_leak, t_pd]
+    fingerprint:
+      n_shift_vs_lot: [-0.10, 0.35]
+      r2_min: 0.0
+      r2_max: 0.85
+      monotonic: true
+      jump_count: 1
+      rank_mobility: high
+      noise_ratio: [0.5, 2.0]
+    severity: critical
+    reference: JEDEC JEP119 / Black's equation
+    detectability:
+      static_limits: none
+      robust_z: partial
+      mahalanobis: partial
+      iforest: strong
+      autoencoder: strong
+      physics_residual: weak
+
+  - id: MECH-ION-01
+    name: Mobile-ion contamination
+    family: contamination
+    defect: true
+    physics:
+      form: hump
+      params:
+        n: [0.12, 0.22]
+        A_frac: [0.01, 0.05]
+        hump_frac: [0.20, 0.55]
+        hump_peak_hour: [48.0, 110.0]
+        hump_width_hour: [25.0, 55.0]
+    affects: [I_leak, Iddq]
+    fingerprint:
+      n_shift_vs_lot: [-0.30, 0.30]
+      r2_min: 0.0
+      r2_max: 0.80
+      monotonic: false
+      jump_count: 0
+      rank_mobility: high
+      noise_ratio: [0.5, 2.0]
+    severity: major
+    reference: MIL-STD-883 TM5004 / mobile ion drift
+    detectability:
+      static_limits: none
+      robust_z: weak
+      mahalanobis: partial
+      iforest: strong
+      autoencoder: strong
+      physics_residual: partial
+
+  - id: MECH-PKG-01
+    name: Bond-wire / package instability
+    family: packaging
+    defect: true
+    physics:
+      form: variance_inflation
+      params:
+        n: [0.12, 0.22]
+        A_frac: [0.01, 0.06]
+        noise_mult: [4.0, 10.0]
+    affects: [Iddq, I_leak, t_pd]
+    fingerprint:
+      n_shift_vs_lot: [-0.40, 0.40]
+      r2_min: 0.0
+      r2_max: 0.60
+      monotonic: false
+      jump_count: 0
+      rank_mobility: medium
+      noise_ratio: [3.0, 12.0]
+    severity: major
+    reference: MIL-STD-883 TM2011 bond strength
+    detectability:
+      static_limits: none
+      robust_z: none
+      mahalanobis: weak
+      iforest: partial
+      autoencoder: strong
+      physics_residual: partial
+
+  - id: MECH-ESD-01
+    name: Latent ESD damage
+    family: electrical_overstress
+    defect: true
+    physics:
+      form: early_offset
+      params:
+        n: [0.06, 0.14]
+        A_frac: [0.01, 0.04]
+        offset_frac: [0.35, 0.80]
+    affects: [I_leak, Iddq]
+    fingerprint:
+      n_shift_vs_lot: [-0.14, -0.02]
+      r2_min: 0.85
+      monotonic: true
+      jump_count: 0
+      rank_mobility: low
+      noise_ratio: [0.5, 1.6]
+    severity: critical
+    reference: ANSI/ESDA/JEDEC JS-001
+    detectability:
+      static_limits: none
+      robust_z: strong
+      mahalanobis: partial
+      iforest: partial
+      autoencoder: weak
+      physics_residual: weak
+
+  - id: MECH-THERM-01
+    name: Localised thermal runaway
+    family: thermal
+    defect: true
+    physics:
+      form: exponential
+      params:
+        tau_hour: [55.0, 105.0]
+        A_frac: [0.30, 0.85]
+    affects: [Iddq, I_leak]
+    fingerprint:
+      n_shift_vs_lot: [0.25, 0.80]
+      r2_min: 0.0
+      r2_max: 0.92
+      monotonic: true
+      jump_count: 0
+      rank_mobility: high
+      noise_ratio: [0.5, 1.8]
+    severity: critical
+    reference: MIL-STD-883 TM1012 thermal characteristics
+    detectability:
+      static_limits: none
+      robust_z: partial
+      mahalanobis: partial
+      iforest: strong
+      autoencoder: strong
+      physics_residual: strong
+
+# ---------------------------------------------------------------------
+# Severity -> cost multiplier applied on top of the base C_FN in costs.yaml.
+# Not every escape costs the same; a critical mechanism escaping is worse.
+# ---------------------------------------------------------------------
+severity_cost_multiplier:
+  none: 0.0
+  minor: 0.4
+  major: 1.0
+  critical: 2.5
