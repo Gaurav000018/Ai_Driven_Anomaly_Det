@@ -4,9 +4,23 @@
 # in the scrap bin. Thresholds are chosen by minimising expected cost with these
 # numbers, NOT by maximising F1 - see src/fusion/cost_decision.py.
 
+# Units: one scrapped good part = 1.0. Everything else is relative to that.
+#
+# cost_review MUST be below cost_false_positive or the REVIEW band can never be
+# economical and the optimiser will collapse it to zero - reviewing a part is
+# only worth doing if it is cheaper than throwing the part away. The first
+# version of this file had review at 12x a scrapped part, which is what that
+# mistake looks like. src/fusion/cost_decision.py now asserts the ordering.
 cost_false_negative: 1000.0   # escape: rework, mission risk, launch delay
-cost_false_positive: 1.0      # scrapped good part
-cost_review: 12.0             # manual QA inspection of one part
+cost_false_positive: 1.0      # scrapped good part - the unit
+cost_review: 0.25             # inspector time, a quarter of the part's value
+
+# Hard cap on the REVIEW band, as a fraction of parts screened. Review is cheap
+# per part, so on cost alone the optimiser will happily send half the lot to a
+# human. The binding constraint on a real line is inspector CAPACITY, not the
+# price of inspection, and it has to be stated as a constraint rather than
+# bought off with a price.
+max_review_fraction: 0.05
 
 # Decision bands on the fused Escape Risk score (0-100).
 # Parts attributed to an UNKNOWN mechanism are floored into REVIEW regardless

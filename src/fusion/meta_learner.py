@@ -142,11 +142,25 @@ class RiskFusion:
         return self
 
     def risk(self, scores: pd.DataFrame) -> pd.Series:
-        """Escape Risk on a 0-100 scale."""
+        """Escape Risk on a 0-100 scale.
+
+        Isotonic calibration is a step function, so on its own it collapses
+        thousands of parts onto a handful of distinct values - 46% of a lot
+        landing on exactly one number. The band optimiser then has nothing to
+        cut between and the REVIEW band vanishes, not because reviewing is
+        wrong but because no threshold separates the parts.
+
+        So ties are broken by the underlying decision value. The nudge is far
+        smaller than the gap between isotonic steps, which keeps the score
+        monotone in the evidence and the calibration intact to six decimals,
+        while restoring the granularity the decision layer needs.
+        """
         X = self._prepare(scores)[self.columns_].to_numpy(dtype=float)
         raw = self.model_.decision_function(self.scaler_.transform(X))
         calibrated = self.calibrator_.predict(raw)
-        return pd.Series(100.0 * calibrated, index=scores.index, name="escape_risk")
+        tie_break = 1e-6 * pd.Series(raw, index=scores.index).rank(pct=True).to_numpy()
+        risk = np.clip(calibrated + tie_break, 0.0, 1.0)
+        return pd.Series(100.0 * risk, index=scores.index, name="escape_risk")
 
     def contributions(self, scores: pd.DataFrame) -> pd.DataFrame:
         """Per-part, per-track contribution to the decision, for explainability."""

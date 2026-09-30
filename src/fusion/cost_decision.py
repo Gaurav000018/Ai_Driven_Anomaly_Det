@@ -30,9 +30,24 @@ ACCEPT, REVIEW, REJECT = "ACCEPT", "REVIEW", "REJECT"
 class CostModel:
     cost_false_negative: float = 1000.0
     cost_false_positive: float = 1.0
-    cost_review: float = 12.0
+    cost_review: float = 0.25
     accept_below: float = 30.0
     reject_above: float = 70.0
+    max_review_fraction: float = 0.05
+
+    def __post_init__(self) -> None:
+        # Reviewing a part is only rational if it is cheaper than scrapping it.
+        # Violate this and the band optimiser correctly - and uselessly -
+        # collapses REVIEW to nothing, which is a confusing way to discover a
+        # typo in a config file.
+        if self.cost_review >= self.cost_false_positive:
+            raise ValueError(
+                f"cost_review ({self.cost_review}) must be below cost_false_positive "
+                f"({self.cost_false_positive}); otherwise scrapping always beats "
+                "reviewing and the REVIEW band cannot exist"
+            )
+        if self.cost_false_negative <= self.cost_false_positive:
+            raise ValueError("cost_false_negative must exceed cost_false_positive for screening to make sense")
 
     @classmethod
     def load(cls, path: Optional[Path] = None) -> "CostModel":
@@ -42,7 +57,8 @@ class CostModel:
         return cls(
             cost_false_negative=float(doc["cost_false_negative"]),
             cost_false_positive=float(doc["cost_false_positive"]),
-            cost_review=float(doc.get("cost_review", 12.0)),
+            cost_review=float(doc.get("cost_review", 0.25)),
+            max_review_fraction=float(doc.get("max_review_fraction", 0.05)),
             accept_below=float(bands.get("accept_below", 30.0)),
             reject_above=float(bands.get("reject_above", 70.0)),
         )
@@ -118,18 +134,56 @@ class CostDecision:
         self.operating_ = best
 
         if self.data_driven_bands and best is not None:
-            # ACCEPT below the cost-optimal threshold: that is precisely the
-            # point where the expected escape cost stops justifying more
-            # screening, so auto-accepting below it is the defensible choice.
-            self.accept_below_ = best.threshold
-            # Auto-REJECT only where the flag is precise enough to scrap without
-            # a human. Everything in between is REVIEW - which is the band that
-            # exists to absorb false-negative risk.
-            self.reject_above_ = self._precision_threshold(s, y, best.threshold)
+            self.accept_below_, self.reject_above_ = self._optimise_bands(s, y, w)
         else:
             self.accept_below_ = self.costs.accept_below
             self.reject_above_ = self.costs.reject_above
         return self
+
+    def _optimise_bands(self, s: np.ndarray, y: np.ndarray, w: np.ndarray) -> tuple:
+        """Choose both band edges together, with review priced in.
+
+        Setting ACCEPT at the binary cost-optimal threshold sends everything
+        above it to REVIEW, which at a 1000:1 cost ratio meant 45% of the lot
+        going to a human - technically cheap, operationally nonsense, because
+        review time was in costs.yaml and never entered the objective.
+
+        The real objective has three terms:
+
+            C_FN * escapes + C_FP * scrapped_good + C_review * reviewed
+
+        with reviewed defects counted as caught, since that is what the band is
+        for. Optimising both edges against it yields a REVIEW band sized to what
+        the inspection budget can actually absorb.
+        """
+        grid = np.unique(np.quantile(s, np.linspace(0.0, 1.0, 201)))
+        review_cap = int(np.floor(self.costs.max_review_fraction * len(s)))
+        best_cost, best_pair = np.inf, (float(grid[0]), float(grid[-1]))
+
+        for accept in grid:
+            accepted = s < accept
+            # Escapes can only happen below the ACCEPT edge; above it a part is
+            # either scrapped or seen by a human, and both catch the defect.
+            escapes = float(w[accepted & (y == 1)].sum())
+            base = self.costs.cost_false_negative * escapes
+            if base >= best_cost:
+                continue  # no reject edge can rescue this accept edge
+            for reject in grid[grid >= accept]:
+                rejected = s >= reject
+                reviewed = int((~accepted & ~rejected).sum())
+                if reviewed > review_cap:
+                    continue  # beyond what the line can actually inspect
+                scrapped_good = int((rejected & (y == 0)).sum())
+                cost = (
+                    base
+                    + self.costs.cost_false_positive * scrapped_good
+                    + self.costs.cost_review * reviewed
+                )
+                if cost < best_cost:
+                    best_cost, best_pair = cost, (float(accept), float(reject))
+
+        self.band_cost_ = float(best_cost)
+        return best_pair
 
     def _precision_threshold(self, s: np.ndarray, y: np.ndarray, floor: float) -> float:
         """Lowest threshold at or above `floor` whose precision clears the target.

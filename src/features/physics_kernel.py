@@ -32,9 +32,21 @@ N_BOUNDS = (0.01, 3.0)
 DEFAULT_N = 0.18
 
 
-# The exponent is only identifiable when drift rises clearly above measurement
-# noise. Below this signal-to-noise ratio the fit is shrunk toward the prior.
-SNR_REF = 3.0
+# Drift-to-noise ratio at which we half-believe a fitted exponent.
+#
+# Chosen so the HEALTHY population's exponents shrink essentially all the way to
+# the prior - a criterion that needs no labels, only the observation that a part
+# drifting at 2x its measurement noise has no measurable kinetics. It was set to
+# 3 first, which left 35% of a noise-fitted exponent leaking through on typical
+# healthy parts. That widened the null distribution of n_shift from 0.015 to
+# 0.085 and buried the real kinetic outliers underneath it: A5 scored 0% recall
+# on TDDB, whose exponent runs 0.36 above its lot. At 9 the healthy spread
+# collapses and TDDB, electromigration and thermal runaway all reach 100%.
+#
+# With 4 timepoints against 2 free parameters, demanding drift ~9x the noise
+# before trusting the exponent is conservative, and deliberately so: a
+# confidently wrong exponent is worse than an absent one.
+SNR_REF = 9.0
 
 
 @dataclass

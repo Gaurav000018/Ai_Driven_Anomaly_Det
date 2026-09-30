@@ -72,9 +72,17 @@ class PhysicsResidualTrack(DetectorTrack):
             # evidence from parts that simply are not degrading yet.
             ident = np.nan_to_num(features[f"{p}__identifiable"].to_numpy(dtype=float), nan=0.0)
 
-            n_term = self._positive(shift / self.n_spread_[p])
-            r2_term = self._positive(R2_HEALTHY - np.nan_to_num(r2, nan=0.0)) / (1.0 - R2_HEALTHY)
-            accel_term = self._positive(np.nan_to_num(accel, nan=0.0) - 1.0)
+            # Every term is bounded. rate_accel is a ratio of late to early
+            # drift rate, and a healthy part's early rate is near zero, so the
+            # raw ratio explodes into the thousands on parts that are merely
+            # quiet. Unclipped, those healthy parts set the operating threshold
+            # and the kinetic signal underneath it is never reached - A5
+            # measured 0% recall on TDDB, the very mechanism it exists to catch.
+            n_term = np.clip(shift / self.n_spread_[p], 0.0, 20.0)
+            r2_term = np.clip(
+                self._positive(R2_HEALTHY - np.nan_to_num(r2, nan=0.0)) / (1.0 - R2_HEALTHY), 0.0, 3.0
+            )
+            accel_term = np.clip(self._positive(np.nan_to_num(accel, nan=0.0) - 1.0), 0.0, 3.0)
 
             combined = self.w_n * n_term + self.w_r2 * r2_term + self.w_accel * accel_term
             # Gate the whole per-parameter score, not just two of its terms.
