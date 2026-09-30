@@ -124,8 +124,8 @@ def feature_columns(features: pd.DataFrame) -> List[str]:
 
 def matrix_for_model(features: pd.DataFrame, columns: Optional[List[str]] = None) -> tuple[np.ndarray, List[str]]:
     cols = columns if columns is not None else feature_columns(features)
-    X = features[cols].to_numpy(dtype=float)
-    # Median imputation keeps a single ragged part from dropping a whole lot.
+    # Copy: the slice can be a read-only view, and we impute into it below.
+    X = np.array(features[cols].to_numpy(dtype=float), copy=True)
     med = np.nanmedian(X, axis=0)
     idx = np.where(np.isnan(X))
     X[idx] = np.take(med, idx[1])
