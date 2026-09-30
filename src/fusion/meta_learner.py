@@ -78,6 +78,7 @@ class RiskFusion:
         self.scaler_: Optional[StandardScaler] = None
         self.model_: Optional[LogisticRegression] = None
         self.calibrator_: Optional[IsotonicRegression] = None
+        self.reference_scale_: Optional[np.ndarray] = None
         self.report_: Optional[FusionReport] = None
 
     def _fit_transform_stats(self, scores: pd.DataFrame) -> None:
@@ -134,6 +135,12 @@ class RiskFusion:
             raw = self.model_.decision_function(Xs)
         self.calibrator_ = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0).fit(raw, y)
 
+        # The reference distribution the display scale is anchored to. Taken
+        # from the fitting population and then frozen, so a clean lot and a bad
+        # lot are scored against the same yardstick - a per-lot percentile
+        # would put parts at the 99th percentile of a lot with no defects in it.
+        self.reference_scale_ = np.sort(self._blended(scores))
+
         self.report_ = FusionReport(
             weights=pd.Series(self.model_.coef_[0], index=self.columns_).sort_values(ascending=False),
             n_defect=int(y.sum()),
@@ -155,12 +162,30 @@ class RiskFusion:
         monotone in the evidence and the calibration intact to six decimals,
         while restoring the granularity the decision layer needs.
         """
+        blended = self._blended(scores)
+        # Map through the reference population's own distribution. The
+        # calibrated escape probability is the right quantity for arithmetic
+        # but the wrong one to print: at 1% prevalence it piles up near zero,
+        # so a genuinely rejected part rendered as "Escape Risk 0/100" on its
+        # own certificate. The ECDF is strictly monotone in the probability, so
+        # every decision, threshold and band is unchanged - only the number a
+        # human reads is different.
+        risk = np.interp(blended, self.reference_scale_, np.linspace(0.0, 100.0, len(self.reference_scale_)))
+        return pd.Series(risk, index=scores.index, name="escape_risk")
+
+    def escape_probability(self, scores: pd.DataFrame) -> pd.Series:
+        """The calibrated probability itself, for anyone doing arithmetic on it."""
+        return pd.Series(self._blended(scores), index=scores.index, name="escape_probability")
+
+    def _blended(self, scores: pd.DataFrame) -> np.ndarray:
         X = self._prepare(scores)[self.columns_].to_numpy(dtype=float)
         raw = self.model_.decision_function(self.scaler_.transform(X))
         calibrated = self.calibrator_.predict(raw)
-        tie_break = 1e-6 * pd.Series(raw, index=scores.index).rank(pct=True).to_numpy()
-        risk = np.clip(calibrated + tie_break, 0.0, 1.0)
-        return pd.Series(100.0 * risk, index=scores.index, name="escape_risk")
+        # Isotonic is a step function, so thousands of parts land on one value
+        # and the band optimiser has nothing to cut between. The nudge is far
+        # below the gap between isotonic steps.
+        tie_break = 1e-6 * pd.Series(raw).rank(pct=True).to_numpy()
+        return np.clip(calibrated + tie_break, 0.0, 1.0)
 
     def contributions(self, scores: pd.DataFrame) -> pd.DataFrame:
         """Per-part, per-track contribution to the decision, for explainability."""
