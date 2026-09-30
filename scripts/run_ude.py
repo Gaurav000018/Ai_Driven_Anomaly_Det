@@ -30,7 +30,7 @@ from src.fusion.meta_learner import RiskFusion  # noqa: E402
 from src.ingest.csv_reader import read_csv  # noqa: E402
 from src.knowledge.coverage_audit import audit, render  # noqa: E402
 from src.knowledge.library import MechanismLibrary  # noqa: E402
-from src.knowledge.prototypes import MechanismAttributor  # noqa: E402
+from src.knowledge.prototypes import MechanismAttributor, NoveltyDetector  # noqa: E402
 from src.module_a.autoencoder import TrajectoryAutoencoderTrack  # noqa: E402
 from src.module_a.iforest import IsolationTrack  # noqa: E402
 from src.module_a.mahalanobis import MahalanobisTrack  # noqa: E402
@@ -60,6 +60,9 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=ROOT / "reports" / "ude.json")
     ap.add_argument("--only", type=str, default=None,
                     choices=["lomo", "oof", "openset", "sweep", "coverage"])
+    ap.add_argument("--no-closed-set", action="store_true",
+                    help="skip the closed-set comparison; halves UDE-1 runtime")
+    ap.add_argument("--lomo-splits", type=int, default=3)
     ap.add_argument("--sweep-lots", type=int, default=8)
     ap.add_argument("--sweep-parts", type=int, default=300)
     args = ap.parse_args()
@@ -77,7 +80,8 @@ def main() -> int:
     if run("lomo"):
         banner("UDE-1  leave-one-mechanism-out")
         print("  train on every mechanism except the held-out one, test on it alone\n")
-        table = lomo(feats, tracks(), lib, fpr_budget=FPR_BUDGET)
+        table = lomo(feats, tracks(), lib, fpr_budget=FPR_BUDGET,
+                     n_splits=args.lomo_splits, closed_set=not args.no_closed_set)
         if not table.empty:
             table = table.sort_values("recall_at_fpr")
             print("\n  " + f"{'held out':<16}{'held-out':>11}{'closed-set':>13}{'gap':>9}  severity")
@@ -120,7 +124,20 @@ def main() -> int:
 
         tau = suggest_tau(known_attr, y, target_keep=0.95)
         print(f"  tau chosen from KNOWN defects only (keep 95%) : {tau:.2f}\n")
-        res = open_set_eval(known_attr, y, unknown_attr, y_oof, tau=tau)
+
+        print("  (a) prototype-centroid distance - the original design")
+        res_proto = open_set_eval(known_attr, y, unknown_attr, y_oof, tau=tau)
+        print(f"      AUROC {res_proto['auroc']:.3f}   median known "
+              f"{res_proto['median_distance_known']:.2f} vs unknown "
+              f"{res_proto['median_distance_unknown']:.2f}")
+        report["ude3_prototype"] = res_proto
+
+        print("\n  (b) k-NN to actual known-defect examples")
+        nov = NoveltyDetector(lib, k=1).fit(feats, y, keep=0.95)
+        kn = pd.DataFrame({"distance": nov.distance(feats, exclude_self=True)})
+        un = pd.DataFrame({"distance": nov.distance(oof_feats)})
+        res = open_set_eval(kn, y, un, y_oof, tau=nov.threshold_)
+        print()
         print(f"  known-vs-unknown AUROC        : {res['auroc']:.3f}")
         print(f"  median distance, known        : {res['median_distance_known']:.2f}")
         print(f"  median distance, unknown      : {res['median_distance_unknown']:.2f}")

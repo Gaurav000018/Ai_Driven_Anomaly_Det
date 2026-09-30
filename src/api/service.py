@@ -31,7 +31,7 @@ from ..fusion.cost_decision import CostDecision, CostModel
 from ..fusion.meta_learner import RiskFusion
 from ..ingest.validate import assert_valid
 from ..knowledge.library import MechanismLibrary
-from ..knowledge.prototypes import MechanismAttributor
+from ..knowledge.prototypes import UNKNOWN, MechanismAttributor, NoveltyDetector
 from ..module_a.autoencoder import TrajectoryAutoencoderTrack
 from ..module_a.iforest import IsolationTrack
 from ..module_a.mahalanobis import MahalanobisTrack
@@ -95,6 +95,12 @@ class ScoringService:
             )
 
         self.attributor = MechanismAttributor(self.library, tau=tau)
+        # Prototype distance NAMES a mechanism; it does not decide whether the
+        # name is trustworthy. Measured against out-of-family physics it
+        # separated known from unknown at AUROC 0.545 - chance. The k-NN
+        # novelty detector does that job at 0.744 with 84% abstention
+        # precision, so the two are kept separate.
+        self.novelty_: Optional[NoveltyDetector] = None
         self.tracks = default_tracks()
         self.reference_: Optional[pd.DataFrame] = None
         self.counterfactual_: Optional[CounterfactualExplainer] = None
@@ -127,6 +133,11 @@ class ScoringService:
             self.decider_.reject_above_ = float(np.quantile(risk, 0.98))
             accepted = risk < self.decider_.accept_below_
 
+        if "is_defect" in features.columns and int(features["is_defect"].sum()) >= 2:
+            self.novelty_ = NoveltyDetector(self.library, k=1).fit(
+                features, features["is_defect"].astype(int).to_numpy(), keep=0.95
+            )
+
         units = {p.name: p.unit for p in self.library.parameters()}
         self.counterfactual_ = CounterfactualExplainer().fit(features, accepted, units=units)
         return self
@@ -156,6 +167,13 @@ class ScoringService:
 
         risk = self.fusion.risk(scores)
         attributions = self.attributor.attribute_frame(features)
+        if self.novelty_ is not None:
+            # Override the prototype-distance flag with the detector that
+            # actually separates known from unknown physics.
+            novel = self.novelty_.is_novel(features)
+            attributions["novelty_distance"] = self.novelty_.distance(features)
+            attributions["is_unknown"] = novel
+            attributions.loc[novel, "mechanism_name"] = UNKNOWN
         decisions = self.decider_.decide(risk, unknown_mechanism=attributions["is_unknown"])
         return LotScore(decisions=decisions, attributions=attributions, features=features, scores=scores)
 

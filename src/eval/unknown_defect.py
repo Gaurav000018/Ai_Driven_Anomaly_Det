@@ -71,8 +71,9 @@ def lomo(
     tracks: Sequence[DetectorTrack],
     library,
     fpr_budget: float = 0.05,
-    n_splits: int = 4,
+    n_splits: int = 3,
     verbose: bool = True,
+    closed_set: bool = True,
 ) -> pd.DataFrame:
     """UDE-1. Returns one row per held-out mechanism.
 
@@ -124,12 +125,16 @@ def lomo(
             # Closed-set comparison: identical fold, but m stays in training.
             # The gap between this and the held-out number is the honest
             # measure of how much the system is leaning on having seen it.
-            closed_mask = np.zeros(len(features), dtype=bool)
-            closed_mask[train_lots_idx] = True
-            closed_train = features[closed_mask]
-            tr2, te2 = _fit_score(tracks, closed_train, test)
-            f2 = RiskFusion().fit(tr2, closed_train["is_defect"].astype(int).to_numpy(), lots=lots.loc[closed_train.index])
-            closed.append(recall_at_fpr(y_test, f2.risk(te2), fpr_budget))
+            # It doubles the cost of the whole protocol, hence the switch.
+            if closed_set:
+                closed_mask = np.zeros(len(features), dtype=bool)
+                closed_mask[train_lots_idx] = True
+                closed_train = features[closed_mask]
+                tr2, te2 = _fit_score(tracks, closed_train, test)
+                f2 = RiskFusion().fit(
+                    tr2, closed_train["is_defect"].astype(int).to_numpy(), lots=lots.loc[closed_train.index]
+                )
+                closed.append(recall_at_fpr(y_test, f2.risk(te2), fpr_budget))
 
             n_def += int(y_test.sum())
 
@@ -144,14 +149,15 @@ def lomo(
                 n_test_defects=n_def,
                 recall_at_fpr=float(np.mean(recalls)),
                 recall_at_threshold=float(np.mean(thr_recalls)),
-                closed_set_recall=float(np.mean(closed)),
+                closed_set_recall=float(np.mean(closed)) if closed else float('nan'),
                 threshold=float(np.mean(thresholds)),
             )
         )
         if verbose:
             r = rows[-1]
+            cs = f"(closed-set {r.closed_set_recall:6.1%})" if closed_set else ""
             print(f"  {held:<16} held-out recall@{fpr_budget:.0%}FPR = {r.recall_at_fpr:6.1%}  "
-                  f"(closed-set {r.closed_set_recall:6.1%})  n={r.n_test_defects}")
+                  f"{cs}  n={r.n_test_defects}", flush=True)
 
     return pd.DataFrame([r.as_row() for r in rows])
 

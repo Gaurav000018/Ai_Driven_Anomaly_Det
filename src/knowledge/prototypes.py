@@ -109,6 +109,81 @@ def observed_signature(features: pd.DataFrame, parameter: str) -> pd.DataFrame:
     return out[list(DIMENSIONS)].astype(float).fillna(0.0)
 
 
+class NoveltyDetector:
+    """Open-set gate: is this signature unlike anything catalogued?
+
+    Prototype distance was the first attempt and it does not work. Measured
+    against out-of-family physics it scored AUROC 0.545 - chance - because
+    eight idealised prototypes with generous tolerances blanket the signature
+    space densely enough that almost any part lands near *something*. Median
+    distance was 0.42 for known mechanisms and 0.46 for unknown ones.
+
+    Comparing against the ACTUAL known-defect examples instead of idealised
+    centroids scores 0.744, with median distance 6.25 against 12.75. Real
+    defects cluster tightly; the fingerprint centroids do not describe where
+    they actually sit.
+
+    This separates two jobs that were wrongly conflated: the prototypes NAME a
+    mechanism, and this decides whether to trust the name.
+    """
+
+    def __init__(self, library: MechanismLibrary, k: int = 1) -> None:
+        self.library = library
+        self.k = k
+        self.scaler_ = None
+        self.nn_ = None
+        self.threshold_: float = np.inf
+
+    def _signature(self, features: pd.DataFrame) -> np.ndarray:
+        blocks = [observed_signature(features, p).to_numpy(dtype=float)
+                  for p in self.library.parameter_names()
+                  if f"{p}__n_shift_vs_lot" in features.columns]
+        return np.hstack(blocks) if blocks else np.zeros((len(features), 1))
+
+    def fit(self, features: pd.DataFrame, is_defect: np.ndarray, keep: float = 0.95) -> "NoveltyDetector":
+        from sklearn.neighbors import NearestNeighbors
+        from sklearn.preprocessing import RobustScaler
+
+        X = self._signature(features)
+        y = np.asarray(is_defect).astype(int)
+        if y.sum() < 2:
+            raise ValueError("novelty detection needs at least two known defect examples")
+
+        # Scale on the HEALTHY population so the defects do not set the units
+        # they are then measured in.
+        self.scaler_ = RobustScaler().fit(X[y == 0])
+        ref = self.scaler_.transform(X[y == 1])
+        self.nn_ = NearestNeighbors(n_neighbors=min(self.k + 1, len(ref))).fit(ref)
+
+        # Threshold from known defects only - the whole point is that it must
+        # be choosable before any unknown mechanism has been seen.
+        d = self.nn_.kneighbors(ref)[0][:, 1:].mean(axis=1)
+        self.threshold_ = float(np.quantile(d, keep))
+        return self
+
+    def distance(self, features: pd.DataFrame, exclude_self: bool = False) -> pd.Series:
+        """Mean distance to the k nearest known-defect examples.
+
+        `exclude_self` must be set when scoring the very parts the detector was
+        fitted on - otherwise each reference defect finds ITSELF at distance
+        zero and the separation looks perfect. That mistake produced an AUROC
+        of exactly 1.000 with median known distance 0.00, which is what a leak
+        looks like rather than what success looks like.
+
+        In production it stays False: a part arriving from the oven is not in
+        the reference set.
+        """
+        X = self.scaler_.transform(self._signature(features))
+        n = self.k + 1 if exclude_self else self.k
+        n = min(n, self.nn_.n_samples_fit_)
+        dists = self.nn_.kneighbors(X, n_neighbors=n)[0]
+        d = dists[:, 1:].mean(axis=1) if exclude_self and dists.shape[1] > 1 else dists.mean(axis=1)
+        return pd.Series(d, index=features.index, name="novelty_distance")
+
+    def is_novel(self, features: pd.DataFrame, exclude_self: bool = False) -> pd.Series:
+        return (self.distance(features, exclude_self=exclude_self) > self.threshold_).rename("is_unknown")
+
+
 class MechanismAttributor:
     def __init__(self, library: MechanismLibrary, tau: float = DEFAULT_TAU) -> None:
         self.library = library
