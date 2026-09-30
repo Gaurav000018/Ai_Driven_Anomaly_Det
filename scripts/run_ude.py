@@ -93,7 +93,10 @@ def main() -> int:
             print(f"\n  WORST-CASE held-out recall : {worst['recall_at_fpr']:.1%} "
                   f"({worst['held_out']}, {worst['mechanism_name']})")
             print(f"  mean held-out recall       : {table['recall_at_fpr'].mean():.1%}")
-            print(f"  mean closed-set recall     : {table['closed_set_recall'].mean():.1%}  <- optimistic")
+            if has_closed:
+                print(f"  mean closed-set recall     : {table['closed_set_recall'].mean():.1%}  <- optimistic")
+            else:
+                print("  closed-set comparison      : skipped (--no-closed-set)")
             report["ude1"] = table.to_dict(orient="records")
 
     # ---------------------------------------------------------------- UDE-2

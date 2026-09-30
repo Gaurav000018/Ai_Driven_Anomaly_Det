@@ -71,6 +71,16 @@ Drift prediction beats every baseline on all three parameters, and conformal cal
 
 Rejecting on the median catches **0/100** defects. Rejecting on the conformal upper bound catches **52/100**. The mean would have let them fly.
 
+### Unknown Defect Evaluation
+
+| Tier | Result |
+|---|---|
+| **UDE-1** leave-one-mechanism-out | worst case **58.9%** (latent ESD, critical), mean 93.8%, six of eight at 100% |
+| **UDE-2** out-of-family physics | **98.8%** recall, ROC-AUC 0.999 on forms absent from the library |
+| **UDE-3** open-set abstention | AUROC 0.744, abstention precision 83.9% (prototype baseline: 0.545) |
+
+UDE-1 worst-case is the honest headline, not the mean. A system averaging 93.8% while recovering 59% of a held-out critical mechanism is a system that loses satellites to that mechanism.
+
 ---
 
 ## What a decision looks like
@@ -126,7 +136,7 @@ LE  Unknown Defect Evaluation ── validates everything above
 Stated here rather than waiting for someone to find them.
 
 - **Attribution is circular on synthetic data.** The same library generates and diagnoses, so its accuracy on generated defects is not evidence. It is only meaningful against held-out mechanisms (UDE-1) and real data.
-- **MECH-ESD-01 is a coverage hole.** Best single track 79% on a critical-severity mechanism. Latent ESD is a flat early offset with a low exponent, so A5 is one-sided against it by design.
+- **MECH-ESD-01 is the real weak spot**, confirmed independently by the coverage audit (best single track 79%) and by UDE-1 (58.9% held-out recall on a critical-severity mechanism). Latent ESD is a flat early offset with a low exponent, so A5 is one-sided against it by construction and A3 barely registers it. Closing this is the top of the backlog.
 - **A5 is weak on HCI and NBTI** (12%, 8%). It detects strong kinetic departures, not subtle ones, at this measurement noise.
 - **The 1000:1 cost ratio drives a 15% yield loss.** That ratio is a configuration choice in `configs/costs.yaml`, not a law.
 - **All results are on synthetic data.** The physics is drawn from JEDEC/MIL-STD models, but no real burn-in dataset has been used.

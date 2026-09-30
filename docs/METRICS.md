@@ -131,14 +131,37 @@ This forced a design separation worth keeping: **the prototypes name a mechanism
 
 Modest, and stated as modest — a third of unknown-physics defects get an explicit "mechanism unrecognised, send to review" rather than a confident wrong label.
 
-### UDE-1 / UDE-4
+### UDE-1 — leave-one-mechanism-out (the honest headline)
 
-Leave-one-mechanism-out and the subtlety sweep are the expensive tiers (every fold refits all five tracks). Run them with:
+Each mechanism is removed from training entirely — tracks, fusion and threshold all fitted without ever seeing it — then evaluated on that mechanism alone. Lots are split *before* the mechanism is removed, so the healthy population cannot appear on both sides.
+
+| Held out | Mechanism | Held-out recall @5% FPR | Severity |
+|---|---|---|---|
+| `MECH-ESD-01` | Latent ESD damage | **58.9%** | critical |
+| `MECH-ION-01` | Mobile-ion contamination | 91.7% | major |
+| `MECH-TDDB-01` | Gate-oxide pinhole | 100.0% | critical |
+| `MECH-HCI-01` | Hot-carrier injection | 100.0% | major |
+| `MECH-NBTI-01` | NBTI threshold drift | 100.0% | major |
+| `MECH-EM-01` | Electromigration | 100.0% | critical |
+| `MECH-PKG-01` | Bond-wire instability | 100.0% | major |
+| `MECH-THERM-01` | Thermal runaway | 100.0% | critical |
+
+**Worst case: 58.9%. Mean: 93.8%.**
+
+Per the reporting rule stated in the architecture, the worst case is the headline. A system averaging 93.8% while recovering only 59% of a held-out critical mechanism is a system that loses satellites to that mechanism.
+
+Six of eight mechanisms generalise perfectly to physics never seen in training, which is a strong result. Latent ESD does not, and the reason is structural rather than incidental: it is a flat early offset with a *low* exponent, so A5 is one-sided against it by construction, A3 barely registers it (7%), and with no ESD examples in training the fusion never learns to lean on A1's 0h signal. Both independent tiers — the coverage audit and UDE-1 — converge on the same weak spot, which is the protocol working as intended.
+
+### UDE-4 — subtlety sweep
+
+Defect amplitude is scaled down and recall re-measured at a fixed false-alarm budget, yielding the Minimum Detectable Drift in MAD above the lot median. See `reports/sweep.log`.
 
 ```bash
 python scripts/run_ude.py --only lomo --no-closed-set --lomo-splits 3
 python scripts/run_ude.py --only sweep
 ```
+
+Both are the expensive tiers — every fold refits all five tracks. `--no-closed-set` halves UDE-1.
 
 ---
 
